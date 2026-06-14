@@ -1,0 +1,25 @@
+﻿# ============================================================
+# RFM Crawling Agent - requirements.txt
+# ============================================================
+#
+# LLM_PROVIDER=mock (기본값, 키 없이 동작) 또는 cloud(anthropic) 를 사용합니다.
+
+# 설정 파일(config.yaml) 읽기
+pyyaml>=6.0
+
+# .env 파일에서 환경변수 읽기
+python-dotenv>=1.0.0
+
+# arXiv / GitHub / HuggingFace API 호출
+requests>=2.31.0
+
+# 클라우드 LLM(Anthropic) 호출 - LLM_PROVIDER=cloud일 때만 사용
+anthropic>=0.40.0
+
+# 항목 저장(items) + 실패 이력 RAG 게이팅(failure_cases)을 모두 처리하는 임베디드 벡터 DB
+lancedb>=0.13.0
+pylance>=0.18.0
+pandas>=2.0.0
+
+# 콘솔 출력 가독성
+rich>=13.0.0

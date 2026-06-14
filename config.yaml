@@ -1,0 +1,31 @@
+# ============================================================
+# RFM Crawling Agent 설정 파일
+# ============================================================
+
+# 검색 키워드 (arXiv / GitHub / HuggingFace 공통)
+keywords:
+  - "vision-language-action"
+  - "imitation learning manipulation"
+  - "robot manipulation policy"
+
+# 화이트리스트 연구실 (이름 + GitHub 조직/사용자명)
+whitelist_labs:
+  - name: "Stanford IRIS Lab"
+    github_org: "ARISE-Initiative"
+  - name: "Berkeley BAIR"
+    github_org: "berkeley-bair"
+  - name: "Google DeepMind"
+    github_org: "google-deepmind"
+
+# GitHub: 최근 N일간 star 증가량이 이 값을 넘으면 "트렌딩"으로 간주
+github_star_threshold: 200
+
+# 수집 대상 기간 (최근 N일)
+lookback_days: 7
+
+# 우리 하드웨어 스펙 (1차 컷오프 기준)
+hw_specs:
+  vram_gb: 24
+  max_latency_ms: 50
+  # 이 값(B)을 초과하는 모델은 VRAM 여유와 무관하게 1차 컷오프
+  max_params_b: 5

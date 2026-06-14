@@ -1,0 +1,196 @@
+# RFM Crawling Agent — 코드 세미나
+
+대상: AI 에이전트 입문자 (5일차 교육 수료, 첫 개인 과제)
+목표: 이 프로젝트가 "왜 이렇게 짜여 있는지"와 "각 파일이 무슨 역할인지"를 이해하고, 직접 확장할 수 있도록 하기
+
+---
+
+## 1. 이 에이전트는 무엇을 하나요?
+
+매주 쏟아지는 로봇 파운데이션 모델(RFM, VLA/모방학습/매니퓰레이션) 관련 논문/레포를
+**자동으로 수집 → AI가 우리 상황에 맞는지 판단 → 리포트로 정리**해주는 에이전트입니다.
+
+사람이 매주 하던 일:
+- arXiv/GitHub/HuggingFace를 일일이 들어가서 신규 논문/레포 확인
+- "이게 우리 VLA 연구에 관련 있나?" 판단
+- "우리 GPU(VRAM)로 돌릴 수 있나?" 판단
+- "예전에 비슷한 거 시도했다가 실패했던 적 있지 않나?" 기억해내기
+- 결과를 정리해서 보고
+
+→ 이 5가지를 코드로 자동화한 것이 이 프로젝트입니다.
+
+---
+
+## 2. 전체 흐름 (제일 중요한 그림)
+
+```mermaid
+flowchart TD
+    A[1. 수집\ncollectors.py] --> B{2. 도메인 적합성?\nfilters.domain_filter}
+    B -- 관련 없음 --> D1[(DB: dropped)]
+    B -- 관련 있음 --> C[신뢰도 + 하드웨어 체크\nfilters.py]
+    C --> E{3. RAG 게이팅\n과거 실패와 비슷한가?\nrag.py}
+    E -- 비슷함 --> D2[(DB: rejected)]
+    E -- 안 비슷함 --> F[4. 성공률/Hz 예측\npredictor.py]
+    F --> D3[(DB: accepted)]
+    D1 & D2 & D3 --> G[5. 리포트 생성\nreport.py]
+```
+
+이 그림이 그대로 [main.py](../main.py)의 for문 안에 코드로 적혀 있습니다.
+**main.py를 먼저 열어서 위에서 아래로 읽어보면 전체 그림이 보입니다.**
+
+---
+
+## 3. 폴더 구조
+
+```
+rfm_crawling_agent/
+├── main.py              # 진입점 - 전체 파이프라인을 순서대로 호출
+├── config.yaml          # 설정 (키워드, 화이트리스트, 하드웨어 스펙 등)
+├── .env.example         # 환경변수 예시 (LLM_PROVIDER 등)
+├── agent/
+│   ├── llm.py           # ① mock/cloud LLM 호출
+│   ├── collectors.py    # ② arXiv/GitHub/HuggingFace 수집
+│   ├── filters.py        # ③ 도메인 판단 + 신뢰도 + 하드웨어 컷오프
+│   ├── rag.py            # ④ 과거 실패이력 RAG 게이팅
+│   ├── predictor.py       # ⑤ 성공률/Hz 예측 + 체크리스트
+│   ├── db.py              # ⑥ 결과 저장/조회 (LanceDB)
+│   └── report.py          # ⑦ 리포트 생성/Slack 전송
+└── data/
+    ├── failure_cases/     # RAG가 참조하는 "과거 실패 사례" 문서
+    ├── lancedb/            # 자동 생성되는 DB 파일
+    └── reports/            # 자동 생성되는 주간 리포트
+```
+
+**핵심 설계 원칙**: 파일 하나 = 역할 하나. `main.py`가 이 파일들을 순서대로 부르기만 합니다.
+
+---
+
+## 4. 핵심 개념 3가지
+
+### 4-1. Mock LLM vs Cloud LLM ([agent/llm.py](../agent/llm.py))
+
+```python
+def ask_llm(prompt: str, system: str = None) -> str:
+    provider = os.getenv("LLM_PROVIDER", "mock").lower()
+    if provider == "cloud":
+        return _ask_cloud(prompt, system)   # 실제 Claude 호출
+    return _ask_mock(prompt)                # 키워드 규칙 기반 가짜 응답
+```
+
+- **왜 필요한가?** API 키 없이도 전체 파이프라인이 끝까지 동작해야 개발/테스트가 쉽습니다.
+- `LLM_PROVIDER=mock`(기본값): 프롬프트 안의 키워드를 보고 그럴듯한 JSON을 만들어줍니다.
+- `LLM_PROVIDER=cloud`: `.env`에 `ANTHROPIC_API_KEY`를 넣으면 실제 Claude가 판단합니다.
+- **다른 모듈은 이 함수가 mock인지 cloud인지 전혀 모릅니다** — 이게 "추상화"의 핵심입니다.
+
+### 4-2. 공통 데이터 스키마 (모든 항목은 같은 모양의 dict)
+
+[agent/collectors.py](../agent/collectors.py)에서 arXiv/GitHub/HuggingFace 결과를 모두 동일한 형태로 통일합니다:
+
+```python
+{
+    "title": str,
+    "summary": str,
+    "url": str,
+    "source": "arxiv" | "github" | "huggingface",
+    "published_date": "YYYY-MM-DD",
+    "repo_stars": int | None,
+}
+```
+
+이후 파이프라인 단계들은 이 dict에 `item["domain"]`, `item["rag_gate"]`, `item["prediction"]` 같은
+키를 하나씩 **추가**해 나갑니다. main.py에서 이 누적 과정을 직접 확인할 수 있습니다.
+
+### 4-3. RAG (벡터 검색 기반 게이팅) ([agent/rag.py](../agent/rag.py))
+
+- `data/failure_cases/*.md`에 과거 실패 사례를 텍스트로 적어둡니다.
+- 이 텍스트들을 "임베딩"(숫자 벡터)으로 변환해 LanceDB에 저장합니다.
+- 신규 항목도 같은 방식으로 벡터로 변환 → **가장 가까운(유사한) 과거 실패 사례**를 검색
+- 거리(distance)가 임계치(`SIMILARITY_DISTANCE_THRESHOLD`)보다 작으면 → "예전에 비슷한 거 해봤다가
+  실패했음" → `rejected` 처리
+
+> 이 프로젝트는 임베딩 모델을 따로 다운로드하지 않기 위해, 단어를 해시값으로 변환해
+> 벡터를 만드는 아주 단순한 방식(`_embed` 함수)을 사용합니다. 실전에서는 sentence-transformers
+> 같은 진짜 임베딩 모델로 교체하면 정확도가 올라갑니다.
+
+---
+
+## 5. 모듈별 코드 워크스루 (main.py 순서대로)
+
+### ① 수집 — [agent/collectors.py](../agent/collectors.py)
+- `fetch_arxiv`, `fetch_github`, `fetch_huggingface` 각각 공개 API 호출
+- `collect_all()`이 셋을 합치고 **URL 기준 중복 제거**
+
+### ② 도메인 판단 — [agent/filters.py](../agent/filters.py) `domain_filter`
+- LLM에게 "이 논문/레포가 VLA/모방학습/매니퓰레이션과 관련 있어?" 질문
+- `{"is_relevant": bool, "score": float, "reason": str}` 형태로 응답받음
+- 관련 없으면 `status="dropped"`로 DB에 기록하고 다음 단계로 넘어가지 않음
+
+### ③ 신뢰도/하드웨어 — [agent/filters.py](../agent/filters.py) `credibility_score`, `hw_compat_check`
+- `credibility_score`: 화이트리스트 연구실(GitHub org) 매칭 또는 star 수로 점수화 (규칙 기반, LLM 안 씀)
+- `hw_compat_check`: 제목/요약에서 "7B", "70B" 같은 패턴을 정규식으로 찾아 우리 GPU(VRAM)로
+  돌릴 수 있는지 추정. `config.yaml`의 `hw_specs.max_params_b`로 상한선 직접 설정 가능
+
+### ④ RAG 게이팅 — [agent/rag.py](../agent/rag.py) `check_failure_history`
+- 위에서 설명한 벡터 검색으로 과거 실패 사례와 비교
+- 비슷하면 `status="rejected"` + "왜 기각됐는지" 근거 문서 인용
+
+### ⑤ 예측 — [agent/predictor.py](../agent/predictor.py) `predict_improvement`
+- LLM에게 "이 기법 도입하면 성공률/Hz 얼마나 개선될 것 같아?" 질문 (추정치임을 명시)
+- **중요**: 추정치만 주는 게 아니라, "시뮬레이터 N회 + 실로봇 N회 실측 후 입력하라"는
+  체크리스트를 항상 같이 생성 → AI 예측을 그대로 믿지 않고 실측으로 검증하는 구조
+
+### ⑥ 저장 — [agent/db.py](../agent/db.py)
+- 모든 단계의 결과를 LanceDB의 `items` 테이블에 JSON으로 저장
+- 같은 URL이면 덮어쓰기(upsert)
+
+### ⑦ 리포트 — [agent/report.py](../agent/report.py)
+- `accepted` / `rejected` / `dropped`로 나눠서 Markdown 리포트 생성 → `data/reports/`
+- `SLACK_WEBHOOK_URL`이 `.env`에 설정되어 있으면 Slack으로도 전송 (없으면 건너뜀)
+
+---
+
+## 6. 실습: 직접 실행해보기
+
+```bash
+pip install -r requirements.txt
+cp .env.example .env          # 기본값(mock)이면 그대로 둬도 됨
+python main.py
+```
+
+확인할 것:
+1. 콘솔에 `[1/5] 수집 중...` ~ `[5/5] 리포트 생성...` 단계별 로그
+2. `data/reports/<오늘날짜>.md` 파일 — 통과/기각/제외 항목이 어떻게 나뉘었는지
+3. (선택) `data/failure_cases/`에 새 실패 사례를 추가하고 다시 실행 → RAG 기각 결과가 바뀌는지 관찰
+
+---
+
+## 7. 세미나 실습 과제 (확장 아이디어)
+
+1. **`config.yaml` 튜닝**: `keywords`, `max_params_b`, `github_star_threshold`를 바꿔보고
+   리포트 결과가 어떻게 달라지는지 확인
+2. **새 실패 사례 추가**: `data/failure_cases/`에 우리 팀의 실제 실패 경험을 markdown으로
+   작성 → RAG 게이팅이 실제로 동작하는지 확인
+3. **Cloud LLM 전환**: `.env`에서 `LLM_PROVIDER=cloud`로 바꾸고 결과 비교 (mock은 키워드
+   매칭이라 관대한 편)
+4. **새 수집 소스 추가**: `agent/collectors.py`에 `fetch_xxx()` 함수를 추가하고
+   `collect_all()`에 연결 (공통 스키마만 맞추면 나머지 파이프라인은 그대로 동작)
+
+---
+
+## 8. 예상 질문 (Q&A)
+
+**Q. mock LLM은 진짜 AI가 아닌데 왜 필요한가요?**
+A. 개발 중에는 API 비용/속도 문제로 매번 실제 LLM을 호출하기 부담스럽습니다. mock으로
+파이프라인 구조 자체가 잘 동작하는지 먼저 검증하고, 마지막에 cloud로 바꿔서 정확도를 올립니다.
+
+**Q. LanceDB가 뭔가요? SQLite/Chroma와 뭐가 다른가요?**
+A. "일반 데이터 저장(items)"과 "벡터 유사도 검색(failure_cases)"을 **하나의 라이브러리**로
+처리할 수 있는 임베디드 DB입니다. 별도 서버 없이 폴더(`data/lancedb/`)에 파일로 저장됩니다.
+
+**Q. RAG 게이팅 임계치(`SIMILARITY_DISTANCE_THRESHOLD`)는 어떻게 정하나요?**
+A. 처음에는 감으로 설정(현재 1.2) 후, 실제로 기각되는/통과되는 사례를 보면서 조정합니다.
+너무 작으면 거의 다 통과(게이팅 무력화), 너무 크면 거의 다 기각됩니다.
+
+**Q. 예측치(성공률/Hz)를 더 정확하게 만들 수 없나요?**
+A. 현재는 LLM(또는 mock) 추정치일 뿐입니다. 7번 실습과제처럼 실측 데이터를 누적해서
+"AI 예측 vs 실측"의 오차 패턴을 분석하면, 다음 단계에서 예측 보정 로직을 추가할 수 있습니다.
