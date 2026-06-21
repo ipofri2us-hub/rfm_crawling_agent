@@ -2,7 +2,7 @@
 # RFM Crawling Agent - requirements.txt
 # ============================================================
 #
-# LLM_PROVIDER=mock (기본값, 키 없이 동작) 또는 cloud(anthropic) 를 사용합니다.
+# LLM_PROVIDER=mock(키 없이 동작) / ollama(로컬, 기본값) / qwen(회사 엔드포인트) / cloud(anthropic) 를 사용합니다.
 
 # 설정 파일(config.yaml) 읽기
 pyyaml>=6.0

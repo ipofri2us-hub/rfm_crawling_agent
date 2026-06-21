@@ -4,7 +4,7 @@ Slack으로도 전송합니다.
 """
 
 import os
-from datetime import date
+from datetime import datetime
 
 import requests
 
@@ -17,7 +17,8 @@ def generate_and_save(items: list[dict]) -> str:
     rejected = [i for i in items if i["status"] == "rejected"]
     dropped = [i for i in items if i["status"] == "dropped"]
 
-    lines = [f"# RFM 주간 리포트 ({date.today().isoformat()})", ""]
+    run_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    lines = [f"# RFM 주간 리포트 ({run_at})", ""]
     lines.append(f"- 수집: {len(items)}건 / 통과: {len(accepted)}건 / "
                   f"RAG 기각: {len(rejected)}건 / 도메인 제외: {len(dropped)}건")
     lines.append("")
@@ -31,15 +32,8 @@ def generate_and_save(items: list[dict]) -> str:
         lines.append(f"- 도메인 판단: {item['domain']['reason']} (score={item['domain']['score']})")
         lines.append(f"- 신뢰도: {item['credibility']['reason']}")
         lines.append(f"- 하드웨어 호환성: {item['hw_compat']['reason']}")
-        pred = item["prediction"]
-        lines.append(
-            f"- 예측치(추정): 성공률 +{pred.get('success_rate_gain_pct')}%p, "
-            f"제어주파수 +{pred.get('control_hz_gain')}Hz ({pred.get('note')})"
-        )
         lines.append("")
-        lines.append("```")
-        lines.append(pred["validation_checklist"].strip())
-        lines.append("```")
+        lines.append(f"> **AI 요약**: {item['ai_summary'].get('summary_ko', '요약 없음')}")
         lines.append("")
 
     lines.append("## 2. RAG 기각 항목 (과거 실패 이력과 유사 -> 실물 평가 보류)")
@@ -63,7 +57,8 @@ def generate_and_save(items: list[dict]) -> str:
 
 def _save(report_text: str):
     os.makedirs(REPORTS_DIR, exist_ok=True)
-    path = os.path.join(REPORTS_DIR, f"{date.today().isoformat()}.md")
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    path = os.path.join(REPORTS_DIR, f"{timestamp}.md")
     with open(path, "w", encoding="utf-8") as f:
         f.write(report_text)
     print(f"[report] 저장 완료: {path}")

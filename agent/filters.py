@@ -24,7 +24,10 @@ def domain_filter(item: dict) -> dict:
         "위 항목이 VLA(Vision-Language-Action), 모방학습, 로봇 매니퓰레이션과 관련 있는지 "
         '판단하고 JSON으로만 답하세요: {"is_relevant": true/false, "score": 0~1, "reason": "..."}'
     )
-    response = ask_llm(prompt)
+    try:
+        response = ask_llm(prompt)
+    except Exception as e:
+        return {"is_relevant": False, "score": 0.0, "reason": f"LLM 호출 실패로 건너뜀: {e}"}
 
     try:
         return json.loads(response)

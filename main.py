@@ -4,7 +4,7 @@ RFM Crawling Agent 진입점.
 실행: python main.py
 
 흐름: 수집 -> 도메인 필터(AI) -> 신뢰도/하드웨어 판단 -> RAG 게이팅
-      -> 예측(AI) -> DB 저장 -> 리포트 생성
+      -> 초록 요약(AI) -> DB 저장 -> 리포트 생성
 """
 
 import sys
@@ -15,7 +15,7 @@ if sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 
-from agent import collectors, db, filters, predictor, rag, report
+from agent import collectors, db, filters, rag, report, summarizer
 
 
 def load_config(path: str = "config.yaml") -> dict:
@@ -51,8 +51,8 @@ def main():
             rejected.append(item)
             continue
 
-        print("[4/5] 개선 효과 예측...")
-        item["prediction"] = predictor.predict_improvement(item)
+        print("[4/5] 초록 요약...")
+        item["ai_summary"] = summarizer.summarize_item(item)
         db.save_item(item, status="accepted")
         accepted.append(item)
 
