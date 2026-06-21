@@ -34,6 +34,7 @@ def generate_and_save(items: list[dict]) -> str:
         lines.append(f"- 하드웨어 호환성: {item['hw_compat']['reason']}")
         lines.append("")
         lines.append(f"> **AI 요약**: {item['ai_summary'].get('summary_ko', '요약 없음')}")
+        lines.append(f"> **의미**: {item['ai_summary'].get('meaning_ko', '의미 없음')}")
         lines.append("")
 
     lines.append("## 2. RAG 기각 항목 (과거 실패 이력과 유사 -> 실물 평가 보류)")

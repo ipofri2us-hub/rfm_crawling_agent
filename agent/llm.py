@@ -140,5 +140,6 @@ def _mock_summarize(prompt: str) -> str:
 
     short = summary[:150] + ("..." if len(summary) > 150 else "")
     summary_ko = f"[mock 요약] '{title}' 항목의 원문 초록: {short}" if short else "[mock 요약] 요약할 초록이 없습니다."
+    meaning_ko = "[mock 의미] 실제 의미 판단은 mock 모드에서 제공되지 않습니다."
 
-    return json.dumps({"summary_ko": summary_ko}, ensure_ascii=False)
+    return json.dumps({"summary_ko": summary_ko, "meaning_ko": meaning_ko}, ensure_ascii=False)

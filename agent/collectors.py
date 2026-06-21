@@ -24,7 +24,7 @@ HF_API_URL = "https://huggingface.co/api/models"
 REQUEST_TIMEOUT = 15
 
 
-def fetch_arxiv(keywords: list[str], days: int) -> list[dict]:
+def fetch_arxiv(keywords: list[str], days: int, max_results: int = 10) -> list[dict]:
     """arXiv에서 최근 N일 이내 제출된 논문을 키워드로 검색합니다."""
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     items = []
@@ -34,7 +34,7 @@ def fetch_arxiv(keywords: list[str], days: int) -> list[dict]:
             "search_query": f'all:"{keyword}"',
             "sortBy": "submittedDate",
             "sortOrder": "descending",
-            "max_results": 10,
+            "max_results": max_results,
         }
         try:
             resp = requests.get(ARXIV_API_URL, params=params, timeout=REQUEST_TIMEOUT)
@@ -164,9 +164,10 @@ def collect_all(config: dict) -> list[dict]:
     keywords = config["keywords"]
     days = config["lookback_days"]
     star_threshold = config["github_star_threshold"]
+    arxiv_max_results = config.get("arxiv_max_results", 10)
 
     all_items = []
-    all_items += fetch_arxiv(keywords, days)
+    all_items += fetch_arxiv(keywords, days, arxiv_max_results)
     all_items += fetch_github(keywords, star_threshold, days)
     all_items += fetch_huggingface(keywords, days)
 
