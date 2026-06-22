@@ -37,6 +37,7 @@ def main():
         print(f"[2/5] 도메인 판단: {item['title'][:60]}")
         item["domain"] = filters.domain_filter(item)
         if not item["domain"]["is_relevant"]:
+            item["status"] = "dropped"
             db.save_item(item, status="dropped")
             dropped.append(item)
             continue
@@ -47,12 +48,14 @@ def main():
         print("[3/5] RAG 게이팅...")
         item["rag_gate"] = rag.check_failure_history(item)
         if item["rag_gate"]["rejected"]:
+            item["status"] = "rejected"
             db.save_item(item, status="rejected")
             rejected.append(item)
             continue
 
         print("[4/5] 초록 요약...")
         item["ai_summary"] = summarizer.summarize_item(item)
+        item["status"] = "accepted"
         db.save_item(item, status="accepted")
         accepted.append(item)
 
@@ -62,8 +65,7 @@ def main():
     )
 
     print("[5/5] 리포트 생성...")
-    all_items = db.get_all_items()
-    report_text = report.generate_and_save(all_items)
+    report_text = report.generate_and_save(accepted + rejected + dropped)
     report.send_to_slack(report_text)
 
 

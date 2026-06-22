@@ -33,6 +33,7 @@ def generate_and_save(items: list[dict]) -> str:
         lines.append(f"- 신뢰도: {item['credibility']['reason']}")
         lines.append(f"- 하드웨어 호환성: {item['hw_compat']['reason']}")
         lines.append("")
+        lines.append(f"> **초록 번역**: {item['ai_summary'].get('abstract_ko', '번역 없음')}")
         lines.append(f"> **AI 요약**: {item['ai_summary'].get('summary_ko', '요약 없음')}")
         lines.append(f"> **의미**: {item['ai_summary'].get('meaning_ko', '의미 없음')}")
         lines.append("")
