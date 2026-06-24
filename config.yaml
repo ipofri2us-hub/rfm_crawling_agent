@@ -24,7 +24,7 @@ github_star_threshold: 2000
 lookback_days: 60
 
 # arXiv: 키워드 1개당 가져올 최대 논문 수 (크롤링 시간 단축 목적, 작게 줄일수록 빨라짐)
-arxiv_max_results: 3
+arxiv_max_results: 5
 
 # 우리 하드웨어 스펙 (1차 컷오프 기준)
 hw_specs:

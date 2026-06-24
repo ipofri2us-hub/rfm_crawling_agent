@@ -30,6 +30,8 @@ def generate_and_save(items: list[dict]) -> str:
         lines.append(f"### {item['title']}")
         lines.append(f"- 출처: {item['source']} | URL: {item['url']}")
         lines.append(f"- 도메인 판단: {item['domain']['reason']} (score={item['domain']['score']})")
+        if item['domain'].get('reason_ko'):
+            lines.append(f"  - 한글: {item['domain']['reason_ko']}")
         lines.append(f"- 신뢰도: {item['credibility']['reason']}")
         lines.append(f"- 하드웨어 호환성: {item['hw_compat']['reason']}")
         lines.append("")
@@ -51,6 +53,8 @@ def generate_and_save(items: list[dict]) -> str:
         lines.append("- 없음")
     for item in dropped:
         lines.append(f"- {item['title']} - {item['domain']['reason']}")
+        if item['domain'].get('reason_ko'):
+            lines.append(f"  - 한글: {item['domain']['reason_ko']}")
 
     report_text = "\n".join(lines)
     _save(report_text)

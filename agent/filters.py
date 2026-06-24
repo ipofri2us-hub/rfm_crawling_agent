@@ -15,24 +15,39 @@ from agent.llm import ask_llm
 def domain_filter(item: dict) -> dict:
     """LLM에게 VLA/모방학습/매니퓰레이션 관련 여부를 판단시킵니다.
 
-    반환: {"is_relevant": bool, "score": float, "reason": str}
+    반환: {"is_relevant": bool, "score": float, "reason": str, "reason_ko": str}
     """
     prompt = (
         "TASK: domain_filter\n"
         f"TITLE: {item['title']}\n"
         f"SUMMARY: {item['summary']}\n"
         "위 항목이 VLA(Vision-Language-Action), 모방학습, 로봇 매니퓰레이션과 관련 있는지 "
-        '판단하고 JSON으로만 답하세요: {"is_relevant": true/false, "score": 0~1, "reason": "..."}'
+        "판단하고 JSON으로만 답하세요. reason은 영어로, reason_ko는 그 한국어 번역으로 작성하세요: "
+        '{"is_relevant": true/false, "score": 0~1, "reason": "...(English)", "reason_ko": "...(한국어 번역)"}'
     )
     try:
         response = ask_llm(prompt)
     except Exception as e:
-        return {"is_relevant": False, "score": 0.0, "reason": f"LLM 호출 실패로 건너뜀: {e}"}
+        reason = f"LLM call failed, skipping: {e}"
+        return {"is_relevant": False, "score": 0.0, "reason": reason, "reason_ko": f"LLM 호출 실패로 건너뜀: {e}"}
+
+    cleaned = response.strip()
+    fence_match = re.search(r"```(?:json)?\s*(.*?)\s*```", cleaned, re.DOTALL)
+    if fence_match:
+        cleaned = fence_match.group(1)
 
     try:
-        return json.loads(response)
+        result = json.loads(cleaned)
+        result.setdefault("reason_ko", result.get("reason", ""))
+        return result
     except json.JSONDecodeError:
-        return {"is_relevant": False, "score": 0.0, "reason": f"LLM 응답 파싱 실패: {response}"}
+        reason = f"Failed to parse LLM response: {response}"
+        return {
+            "is_relevant": False,
+            "score": 0.0,
+            "reason": reason,
+            "reason_ko": f"LLM 응답 파싱 실패: {response}",
+        }
 
 
 def credibility_score(item: dict, config: dict) -> dict:

@@ -60,7 +60,18 @@ def _ask_ollama(prompt: str, system: str = None) -> str:
 
     resp = requests.post(
         f"{base_url}/api/chat",
-        json={"model": model, "messages": messages, "stream": False},
+        json={
+            "model": model,
+            "messages": messages,
+            "stream": False,
+            # 모델 기본 context_length(262144)로 호출하면 KV 캐시가 너무 커져
+            # RAM이 작은 환경(GPU 없음, 13GB RAM)에서 응답이 멈추거나 타임아웃됨.
+            "options": {"num_ctx": int(os.getenv("OLLAMA_NUM_CTX", "4096"))},
+            # qwen3.5는 하이브리드 thinking 모델이라 기본적으로 긴 reasoning을 생성함.
+            # CPU 전용 환경에서는 이것만으로도 응답이 수십 초~수분씩 걸려 타임아웃의
+            # 주된 원인이 되므로, JSON 한 줄만 필요한 이 파이프라인에서는 비활성화.
+            "think": False,
+        },
         timeout=REQUEST_TIMEOUT,
     )
     resp.raise_for_status()
