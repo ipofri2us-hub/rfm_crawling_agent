@@ -22,6 +22,66 @@ load_dotenv()
 REQUEST_TIMEOUT = 300  # 로컬 Ollama 추론은 모델 크기/하드웨어에 따라 1~2분 이상 걸릴 수 있음
 
 
+def _escape_raw_control_chars_in_strings(s: str) -> str:
+    """JSON 문자열 리터럴 내부의 escape 안 된 raw 줄바꿈/탭을 \\n, \\t로 바꿔준다.
+
+    LLM이 긴 텍스트를 생성할 때 줄바꿈을 \\n으로 escape하지 않고 그대로 넣어
+    'Invalid control character' 파싱 에러를 내는 경우가 있어 보정한다.
+    """
+    out = []
+    in_string = False
+    escape = False
+    for ch in s:
+        if in_string:
+            if escape:
+                out.append(ch)
+                escape = False
+            elif ch == "\\":
+                out.append(ch)
+                escape = True
+            elif ch == '"':
+                out.append(ch)
+                in_string = False
+            elif ch == "\n":
+                out.append("\\n")
+            elif ch == "\r":
+                out.append("\\r")
+            elif ch == "\t":
+                out.append("\\t")
+            else:
+                out.append(ch)
+        else:
+            if ch == '"':
+                in_string = True
+            out.append(ch)
+    return "".join(out)
+
+
+def parse_json_response(response: str) -> dict:
+    """LLM이 ```json 코드펜스, trailing comma, escape 안 된 줄바꿈 등을 섞어 보내는 경우를
+    보정해서 JSON으로 파싱한다. 끝까지 실패하면 json.JSONDecodeError를 던진다.
+    """
+    cleaned = response.strip()
+    fence_match = re.search(r"```(?:json)?\s*(.*?)\s*```", cleaned, re.DOTALL)
+    if fence_match:
+        cleaned = fence_match.group(1)
+
+    candidates = [
+        cleaned,
+        re.sub(r",\s*([}\]])", r"\1", cleaned),
+        _escape_raw_control_chars_in_strings(cleaned),
+        re.sub(r",\s*([}\]])", r"\1", _escape_raw_control_chars_in_strings(cleaned)),
+    ]
+
+    last_error = None
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError as e:
+            last_error = e
+    raise last_error
+
+
 def ask_llm(prompt: str, system: str = None) -> str:
     provider = os.getenv("LLM_PROVIDER", "ollama").lower()
 

@@ -6,10 +6,9 @@
 3. hw_compat_check    : 우리 하드웨어(VRAM) 스펙과의 1차 호환성 컷오프 (규칙 기반)
 """
 
-import json
 import re
 
-from agent.llm import ask_llm
+from agent.llm import ask_llm, parse_json_response
 
 
 def domain_filter(item: dict) -> dict:
@@ -22,8 +21,11 @@ def domain_filter(item: dict) -> dict:
         f"TITLE: {item['title']}\n"
         f"SUMMARY: {item['summary']}\n"
         "위 항목이 VLA(Vision-Language-Action), 모방학습, 로봇 매니퓰레이션과 관련 있는지 "
-        "판단하고 JSON으로만 답하세요. reason은 영어로, reason_ko는 그 한국어 번역으로 작성하세요: "
-        '{"is_relevant": true/false, "score": 0~1, "reason": "...(English)", "reason_ko": "...(한국어 번역)"}'
+        "판단하고 JSON으로만 답하세요. 다른 설명 없이 JSON 한 줄만 출력하세요. "
+        "reason과 reason_ko는 각각 줄바꿈이나 마크다운(글머리표, 굵게 등) 없이 한 문장으로만 "
+        "작성하세요. reason은 영어로, reason_ko는 그 한국어 번역으로 작성하세요: "
+        '{"is_relevant": true/false, "score": 0~1, "reason": "...(English, one sentence)", '
+        '"reason_ko": "...(한국어 번역, 한 문장)"}'
     )
     try:
         response = ask_llm(prompt)
@@ -31,16 +33,9 @@ def domain_filter(item: dict) -> dict:
         reason = f"LLM call failed, skipping: {e}"
         return {"is_relevant": False, "score": 0.0, "reason": reason, "reason_ko": f"LLM 호출 실패로 건너뜀: {e}"}
 
-    cleaned = response.strip()
-    fence_match = re.search(r"```(?:json)?\s*(.*?)\s*```", cleaned, re.DOTALL)
-    if fence_match:
-        cleaned = fence_match.group(1)
-
     try:
-        result = json.loads(cleaned)
-        result.setdefault("reason_ko", result.get("reason", ""))
-        return result
-    except json.JSONDecodeError:
+        result = parse_json_response(response)
+    except Exception:
         reason = f"Failed to parse LLM response: {response}"
         return {
             "is_relevant": False,
@@ -48,6 +43,9 @@ def domain_filter(item: dict) -> dict:
             "reason": reason,
             "reason_ko": f"LLM 응답 파싱 실패: {response}",
         }
+
+    result.setdefault("reason_ko", result.get("reason", ""))
+    return result
 
 
 def credibility_score(item: dict, config: dict) -> dict:
